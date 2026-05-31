@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morimori POS</title>
+<style>
+body{font-family:-apple-system,sans-serif;margin:0;background:#f4f4f4}
+header{background:#222;color:#fff;padding:12px;text-align:center}
+nav{display:flex}
+nav button{flex:1;padding:12px;border:none}
+section{padding:12px}
+.card{background:#fff;padding:12px;border-radius:10px;margin-bottom:10px}
+input,select,button{padding:10px;margin:4px;width:100%;box-sizing:border-box}
+table{width:100%;border-collapse:collapse}
+td,th{border-bottom:1px solid #ddd;padding:6px}
+.ticket{font-family:monospace;white-space:pre-wrap}
+.small{width:auto}
+</style>
+</head>
+<body>
+<header><h2>Morimori POS</h2></header>
+
+<nav>
+<button onclick="show('catalogo')">Catálogo</button>
+<button onclick="show('venta')">Venta</button>
+<button onclick="show('historial')">Historial</button>
+</nav>
+
+<section id="catalogo">
+<div class="card">
+<h3>Agregar producto</h3>
+<input id="nombre" placeholder="Nombre">
+<input id="precioNormal" type="number" placeholder="Precio normal">
+<input id="precioCafe" type="number" placeholder="Precio cafetería">
+<button onclick="guardarProducto()">Guardar</button>
+</div>
+<div class="card">
+<h3>Productos</h3>
+<div id="listaProductos"></div>
+</div>
+</section>
+
+<section id="venta" style="display:none">
+<div class="card">
+<select id="tipoPrecio">
+<option value="normal">Cliente normal</option>
+<option value="cafeteria">Cafetería</option>
+</select>
+<select id="productoVenta"></select>
+<button onclick="agregarVenta()">Agregar producto</button>
+</div>
+
+<div class="card">
+<h3>Comanda</h3>
+<table id="tablaVenta"></table>
+<h3>Total: $<span id="total">0</span></h3>
+<button onclick="cerrarVenta()">Generar ticket</button>
+</div>
+
+<div class="card">
+<h3>Ticket</h3>
+<div id="ticket" class="ticket"></div>
+<button onclick="window.print()">Imprimir (AirPrint)</button>
+</div>
+</section>
+
+<section id="historial" style="display:none">
+<div class="card">
+<h3>Historial</h3>
+<div id="listaHistorial"></div>
+</div>
+</section>
+
+<script>
+let productos=JSON.parse(localStorage.getItem('productos')||'[]');
+let historial=JSON.parse(localStorage.getItem('historial')||'[]');
+let carrito=[];
+
+function save(){
+localStorage.setItem('productos',JSON.stringify(productos));
+localStorage.setItem('historial',JSON.stringify(historial));
+}
+
+function show(id){
+document.querySelectorAll('section').forEach(s=>s.style.display='none');
+document.getElementById(id).style.display='block';
+}
+
+function guardarProducto(){
+const p={
+id:Date.now(),
+nombre:nombre.value,
+normal:Number(precioNormal.value),
+cafeteria:Number(precioCafe.value)
+};
+productos.push(p);
+save();
+renderProductos();
+}
+
+function renderProductos(){
+listaProductos.innerHTML='';
+productoVenta.innerHTML='';
+productos.forEach(p=>{
+listaProductos.innerHTML+=`
+<div>
+<b>${p.nombre}</b><br>
+Normal: $${p.normal} | Cafetería: $${p.cafeteria}
+<button onclick="eliminarProducto(${p.id})">Eliminar</button>
+</div><hr>`;
+
+productoVenta.innerHTML+=`<option value="${p.id}">${p.nombre}</option>`;
+});
+}
+
+function eliminarProducto(id){
+productos=productos.filter(x=>x.id!==id);
+save();
+renderProductos();
+}
+
+function agregarVenta(){
+const id=Number(productoVenta.value);
+const p=productos.find(x=>x.id===id);
+const tipo=tipoPrecio.value;
+const precio=tipo==='normal'?p.normal:p.cafeteria;
+
+const existe=carrito.find(x=>x.id===id);
+if(existe){existe.cantidad++;}
+else{carrito.push({...p,precio,cantidad:1});}
+
+renderCarrito();
+}
+
+function renderCarrito(){
+let total=0;
+tablaVenta.innerHTML='<tr><th>Producto</th><th>Cant</th><th>Total</th></tr>';
+carrito.forEach((p,i)=>{
+const sub=p.cantidad*p.precio;
+total+=sub;
+tablaVenta.innerHTML+=`
+<tr>
+<td>${p.nombre}</td>
+<td><button class="small" onclick="menos(${i})">-</button>
+${p.cantidad}
+<button class="small" onclick="mas(${i})">+</button></td>
+<td>$${sub}</td>
+</tr>`;
+});
+document.getElementById('total').innerText=total.toFixed(2);
+}
+
+function mas(i){carrito[i].cantidad++;renderCarrito();}
+function menos(i){
+carrito[i].cantidad--;
+if(carrito[i].cantidad<=0) carrito.splice(i,1);
+renderCarrito();
+}
+
+function cerrarVenta(){
+const folio=String(historial.length+1).padStart(6,'0');
+const fecha=new Date().toLocaleString('es-MX');
+
+let total=0;
+let txt=`      MORIMORI\n`;
+txt+=`----------------------------\n`;
+txt+=`Folio: ${folio}\n`;
+txt+=`Fecha: ${fecha}\n\n`;
+
+carrito.forEach(p=>{
+const sub=p.cantidad*p.precio;
+total+=sub;
+txt+=`${p.cantidad}x ${p.nombre}\n$${sub.toFixed(2)}\n\n`;
+});
+
+txt+=`----------------------------\n`;
+txt+=`TOTAL: $${total.toFixed(2)}\n`;
+txt+=`----------------------------\n`;
+txt+=`Gracias por tu compra\n`;
+
+ticket.innerText=txt;
+
+historial.unshift({
+folio,
+fecha,
+items:carrito,
+total
+});
+
+save();
+renderHistorial();
+carrito=[];
+renderCarrito();
+}
+
+function renderHistorial(){
+listaHistorial.innerHTML='';
+historial.forEach(h=>{
+listaHistorial.innerHTML+=`
+<div>
+<b>Folio ${h.folio}</b><br>
+${h.fecha}<br>
+Total: $${h.total.toFixed(2)}
+</div><hr>`;
+});
+}
+
+renderProductos();
+renderHistorial();
+</script>
+</body>
+</html>
