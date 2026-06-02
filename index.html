@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Morimori POS</title>
+<style>
+body{font-family:-apple-system,sans-serif;background:#f7f7f7;margin:0}
+header{background:#fff;padding:15px;position:sticky;top:0;box-shadow:0 1px 5px rgba(0,0,0,.08)}
+nav button{margin:4px;padding:10px;border:0;border-radius:10px;background:#f4dfe7}
+.card{background:#fff;margin:12px;padding:14px;border-radius:14px;box-shadow:0 1px 5px rgba(0,0,0,.08)}
+input,select,textarea{width:100%;padding:10px;margin:4px 0;box-sizing:border-box}
+.hidden{display:none}
+@media print{body *{visibility:hidden}#ticketBox,#ticketBox *{visibility:visible}#ticketBox{position:absolute;left:0;top:0;width:58mm}}
+</style></head><body>
+<header><h2>🍰 Morimori POS</h2>
+<nav>
+<button onclick="tab('dash')">Dashboard</button>
+<button onclick="tab('cat')">Catálogo</button>
+<button onclick="tab('ped')">Pedido</button>
+<button onclick="tab('his')">Historial</button>
+<button onclick="exportar()">Exportar</button>
+<input type="file" onchange="importar(event)">
+</nav></header>
+
+<section id="dash">
+<div class="card"><h3>Ventas</h3>
+<div id="dHoy"></div><div id="dSemana"></div><div id="dMes"></div>
+</div></section>
+
+<section id="cat" class="hidden">
+<div class="card">
+<input id="nombre" placeholder="Producto">
+<input id="categoria" placeholder="Categoría">
+<input id="normal" type="number" placeholder="Precio normal">
+<input id="cafeteria" type="number" placeholder="Precio cafetería">
+<button onclick="guardarProducto()">Guardar</button>
+</div>
+<div class="card"><input id="buscarProd" placeholder="Buscar" oninput="renderProductos()"><div id="productos"></div></div>
+</section>
+
+<section id="ped" class="hidden">
+<div class="card">
+<input id="cliente" placeholder="Cliente">
+<input id="telefono" placeholder="Teléfono">
+<input id="fechaEntrega" type="date">
+<input id="horaEntrega" type="time">
+<select id="tipoEntrega"><option>Recoger</option><option>Envío</option></select>
+<textarea id="direccion" placeholder="Dirección"></textarea>
+<input id="anticipo" type="number" placeholder="Anticipo">
+<textarea id="notas" placeholder="Notas"></textarea>
+<select id="listaProductos"></select>
+<select id="listaPrecio"><option value="normal">Normal</option><option value="cafeteria">Cafetería</option></select>
+<button onclick="agregar()">Agregar producto</button>
+<div id="carrito"></div>
+<h3>Total $<span id="total">0.00</span></h3>
+<button onclick="guardarPedido()">Guardar pedido</button>
+</div>
+<div class="card">
+<div id="ticketBox"><pre id="ticket"></pre></div>
+<button onclick="window.print()">Imprimir ticket</button>
+</div>
+</section>
+
+<section id="his" class="hidden">
+<div class="card">
+<input id="buscarPedido" placeholder="Buscar cliente o folio" oninput="renderPedidos()">
+<div id="pedidos"></div>
+</div>
+</section>
+
+<script>
+let productos=JSON.parse(localStorage.getItem('productos')||'[]');
+let pedidos=JSON.parse(localStorage.getItem('pedidos')||'[]');
+let carrito=[];
+function save(){localStorage.setItem('productos',JSON.stringify(productos));localStorage.setItem('pedidos',JSON.stringify(pedidos));dashboard();}
+function tab(id){document.querySelectorAll('section').forEach(s=>s.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');}
+function guardarProducto(){
+productos.push({id:Date.now(),nombre:nombre.value,categoria:categoria.value,normal:+normal.value,cafeteria:+cafeteria.value});
+nombre.value='';categoria.value='';normal.value='';cafeteria.value='';save();renderProductos();
+}
+function renderProductos(){
+let q=(buscarProd.value||'').toLowerCase();
+productos.innerHTML='';
+listaProductos.innerHTML='';
+productosData=productos.filter(p=>p.nombre.toLowerCase().includes(q));
+productosData.forEach(p=>{
+document.getElementById('productos').innerHTML+=`<div><b>${p.nombre}</b> $${p.normal}/$${p.cafeteria}
+<button onclick="editar(${p.id})">Editar</button>
+<button onclick="borrar(${p.id})">Eliminar</button></div><hr>`;
+});
+productos.forEach(p=>listaProductos.innerHTML+=`<option value="${p.id}">${p.nombre}</option>`);
+}
+function editar(id){let p=productos.find(x=>x.id==id);p.nombre=prompt('Nombre',p.nombre)||p.nombre;save();renderProductos();}
+function borrar(id){productos=productos.filter(x=>x.id!=id);save();renderProductos();}
+function agregar(){
+let p=productos.find(x=>x.id==listaProductos.value);
+let precio=listaPrecio.value=='normal'?p.normal:p.cafeteria;
+let e=carrito.find(x=>x.id==p.id);
+if(e)e.cant++; else carrito.push({...p,precio,cant:1});
+renderCarrito();
+}
+function renderCarrito(){
+let t=0;carrito.innerHTML='';
+document.getElementById('carrito').innerHTML='';
+carrito.forEach((i,n)=>{
+t+=i.cant*i.precio;
+document.getElementById('carrito').innerHTML+=`${i.cant}x ${i.nombre} $${(i.cant*i.precio).toFixed(2)}
+<button onclick="carrito[${n}].cant++;renderCarrito()">+</button>
+<button onclick="carrito.splice(${n},1);renderCarrito()">🗑️</button><br>`;
+});
+total.textContent=t.toFixed(2);
+}
+function guardarPedido(){
+let totalv=carrito.reduce((a,b)=>a+b.cant*b.precio,0);
+let folio=String(pedidos.length+1).padStart(6,'0');
+let fecha=new Date().toLocaleDateString('es-MX');
+let pedido={id:Date.now(),folio,fecha,cliente:cliente.value,telefono:telefono.value,fechaEntrega:fechaEntrega.value,horaEntrega:horaEntrega.value,tipoEntrega:tipoEntrega.value,direccion:direccion.value,anticipo:+anticipo.value||0,notas:notas.value,estado:'Pendiente',items:carrito,total:totalv};
+pedidos.unshift(pedido); save();
+ticket.textContent=`MORIMORI\nFolio: ${folio}\nFecha: ${fecha}\nCliente: ${pedido.cliente}\n\n`+carrito.map(i=>`${i.cant}x ${i.nombre} $${(i.cant*i.precio).toFixed(2)}`).join("\n")+`\n\nTOTAL $${totalv.toFixed(2)}\nANTICIPO $${pedido.anticipo.toFixed(2)}\nSALDO $${(totalv-pedido.anticipo).toFixed(2)}`;
+carrito=[];renderCarrito();renderPedidos();
+cliente.value='';telefono.value='';direccion.value='';anticipo.value='';notas.value='';
+}
+function renderPedidos(){
+let q=(buscarPedido.value||'').toLowerCase();
+document.getElementById('pedidos').innerHTML=pedidos.filter(p=>p.folio.includes(q)||(p.cliente||'').toLowerCase().includes(q)).map(p=>`
+<div><b>${p.folio}</b> ${p.cliente} - $${p.total.toFixed(2)}
+<select onchange="estado(${p.id},this.value)">
+<option ${p.estado=='Pendiente'?'selected':''}>Pendiente</option>
+<option ${p.estado=='En producción'?'selected':''}>En producción</option>
+<option ${p.estado=='Listo'?'selected':''}>Listo</option>
+<option ${p.estado=='Entregado'?'selected':''}>Entregado</option>
+</select>
+<button onclick="reimprimir(${p.id})">Reimprimir</button>
+</div><hr>`).join('');
+}
+function estado(id,v){pedidos.find(x=>x.id==id).estado=v;save();}
+function reimprimir(id){let p=pedidos.find(x=>x.id==id);ticket.textContent=`MORIMORI\nFolio:${p.folio}\nFecha:${p.fecha}\nCliente:${p.cliente}\nTOTAL $${p.total.toFixed(2)}`;tab('ped');}
+function dashboard(){
+let h=0,s=0,m=0,now=new Date();
+pedidos.forEach(p=>{let d=new Date(p.id);if(d.toDateString()==now.toDateString())h+=p.total;if((now-d)/86400000<=7)s+=p.total;if(d.getMonth()==now.getMonth())m+=p.total;});
+dHoy.textContent='Hoy: $'+h.toFixed(2);dSemana.textContent='Semana: $'+s.toFixed(2);dMes.textContent='Mes: $'+m.toFixed(2);
+}
+function exportar(){let b=new Blob([JSON.stringify({productos,pedidos})],{type:'application/json'});let a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='morimori-backup.json';a.click();}
+function importar(e){let r=new FileReader();r.onload=()=>{let d=JSON.parse(r.result);productos=d.productos||[];pedidos=d.pedidos||[];save();renderProductos();renderPedidos();};r.readAsText(e.target.files[0]);}
+renderProductos();renderPedidos();dashboard();
+</script></body></html>
